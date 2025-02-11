@@ -1,0 +1,381 @@
+// ==UserScript==
+// @name        PreBox Tools ⭐
+// @namespace        http://tampermonkey.net/
+// @version        1.5
+// @description        「pre枠」関連総合編集ツール　「Ctrl+F7」
+// @author        Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @exclude        https://blog.ameba.jp/ucs/entry/srventrylist.do*
+// @icon        https://www.google.com/s2/favicons?sz=64&domain=ameblo.jp
+// @grant        none
+// ==/UserScript==
+
+
+let retry=0;
+let interval=setInterval(wait_target, 100);
+function wait_target(){
+    retry++;
+    if(retry>10){ // リトライ制限 10回 1sec
+        clearInterval(interval); }
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    if(target){
+        clearInterval(interval);
+        main(); }}
+
+
+function main(){
+    let mode=0;
+    let box_mode=0; // boxの状態
+    let box_i; // boxの選択
+
+    let editor_iframe;
+    let iframe_doc;
+    let iframe_body;
+    let wysiwyg; // 通常表示の iframe内 html
+
+    let buffer=[]; // box内データのバックアップ用配列
+
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver(catch_key);
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+
+            when_back();
+            right_select();
+
+            document.addEventListener('keydown', check_key); // iframe外
+            iframe_doc.addEventListener('keydown', check_key); // iframe内
+
+
+            function check_key(event){
+                if(event.ctrlKey && event.keyCode==118){ // ショートカット「Crtl+F7」
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    if(mode==0){
+                        mode=1;
+                        sign();
+                        right_select();
+                        box_act(); }
+                    else if(mode==1){
+                        mode=0;
+                        buffer=[]; // ツールOFF時にバッファークリア 🔵
+                        sign_clear();
+                        tospace_clear();
+                        box_close(); }}}}
+
+        before_end(); } // catch_key()
+
+
+    function when_back(){ // HTML表示から戻った時に処理状態を再現表示
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                if(mode==1){
+                    sign();
+                    box_act(); }}}}
+
+
+
+    // ********** Menu Display and additional function **************
+
+    function sign(){
+        monitor.disconnect(); // 起動時セットアップを MutationObserverに反応させない
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+
+            let style_sbf=
+                '<style id="style_sbf">'+
+                '.open_box { outline: 2px solid #009688 !important; height: auto !important; } '+
+                '.clean_box { outline: 2px solid #03a9f4 !important; }'+
+                '</style>';
+
+            if(!iframe_doc.documentElement.querySelector('#style_sbf')){
+                iframe_doc.documentElement.insertAdjacentHTML('beforeend', style_sbf); }}
+
+
+        let SVG_h=
+            '<svg id="help_pbt" viewBox="0 0 150 150">'+
+            '<path  fill="#fff" d="M66 13C56 15 47 18 39 24C-12 60 18 146 82 137C92 '+
+            '135 102 131 110 126C162 90 128 4 66 13M68 25C131 17 145 117 81 '+
+            '125C16 133 3 34 68 25M69 40C61 41 39 58 58 61C66 63 73 47 82 57C84 '+
+            '60 83 62 81 65C77 70 52 90 76 89C82 89 82 84 86 81C92 76 98 74 100 66'+
+            'C105 48 84 37 69 40M70 94C58 99 66 118 78 112C90 107 82 89 70 94z">'+
+            '</path></svg>';
+
+        let disp_sf=
+            '<div id="disp_sf">'+
+            SVG_h+'　　 '+
+            '■ To Space (nbsp): Ctrl+L-Click　■ Code Copy: Ctrl＋R-Click　■ Scroll Fix: Alt＋Click'+
+            '</div>'+
+            '<style>'+
+            '#cke_1_contents { display: flex; flex-direction: column; } '+
+            '#disp_sf { position: relative; margin: 0 0 5px; padding: 4px 0 1px; '+
+            'font: 16px/24px Meiryo; color: #fff; background: #009688; white-space: nowrap; } '+
+            '#help_pbt { position: absolute; top: 7px; left: 6px; height: 16px; width: 16px; '+
+            'cursor: pointer; }'+
+            '</style>';
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            if(!document.querySelector('#disp_sf')){
+                editor_iframe.insertAdjacentHTML('beforebegin', disp_sf); }}
+
+        monitor.observe(target, {childList: true});
+
+
+        document.querySelector('#disp_sf').style.display='block';
+        let help=document.querySelector('#help_pbt');
+
+        help.onclick=function(){
+            window.open("https://ameblo.jp/personwritep/entry-12760312656.html", '_blank'); }
+
+    } // sign()
+
+
+
+    function sign_clear(){
+        if(target.querySelector('#disp_sf')){
+            target.querySelector('#disp_sf').style.display='none'; }} // 起動表示を非表示
+
+
+
+    // *********** Pre Box Right Select ********************
+
+    function right_select(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                let iframe_body=iframe_doc.querySelector('body');
+                if(iframe_body){
+                    let target_pre=iframe_body.querySelectorAll('pre');
+                    for(let i=0; i<target_pre.length; i++){
+                        target_pre[i].oncontextmenu=function(event){
+                            if(event.ctrlKey){
+                                event.preventDefault();
+                                event.stopImmediatePropagation();
+                                select_code(target_pre[i]); }}}
+
+                    function select_code(box){
+                        let selection=iframe_doc.getSelection();
+                        let range=iframe_doc.createRange();
+                        range.selectNodeContents(box);
+                        selection.removeAllRanges();
+                        selection.addRange(range); }
+                }}}} // right_select()
+
+
+
+    // ********** Scroll Fix & To Space (nbsp) **************
+
+    function box_act(){
+        let pre_box; // PRE枠のコンテナブロック
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                iframe_body=iframe_doc.querySelector('body');
+                if(iframe_body){
+                    pre_box=iframe_body.querySelectorAll('div');
+
+                    for(let i=0; i<pre_box.length; i++){
+                        pre_box[i].onclick=function(event){
+                            if(event.altKey){
+                                event.preventDefault();
+                                event.stopImmediatePropagation();
+                                scroll_fix(pre_box[i], i); }
+                            if(event.ctrlKey){
+                                event.preventDefault();
+                                event.stopImmediatePropagation();
+                                edit_box(pre_box[i], i); }}}
+
+
+
+                    function scroll_fix(box, index){
+                        if(box_mode==0 && mode==1){
+                            box_mode=1; // boxのScroll設定を外す
+                            let style_set=window.getComputedStyle(box, null);
+                            if(style_set.getPropertyValue('overflow')){
+                                if(style_set.getPropertyValue('overflow')=='scroll' ||
+                                   style_set.getPropertyValue('overflow')=='auto' ||
+                                   style_set.getPropertyValue('overflow')=='overlay'){
+                                    box_i=index;
+                                    box.classList.add('open_box'); }}
+                            else if(style_set.getPropertyValue('overflow-y')){
+                                if(style_set.getPropertyValue('overflow-y')=='scroll' ||
+                                   style_set.getPropertyValue('overflow-y')=='auto' ||
+                                   style_set.getPropertyValue('overflow-y')=='overlay'){
+                                    box_i=index;
+                                    box.classList.add('open_box'); }}}
+                        else{
+                            if(index==box_i){
+                                box_mode=0; // boxのScroll設定を元に戻す
+                                box.classList.remove('open_box'); }}
+                    } // scroll_fix()
+
+
+
+                    function edit_box(box, index){
+                        let nbsp;
+                        let a_count;
+
+                        if(box.firstChild.tagName=='PRE' && mode==1){
+                            if(!box.classList.contains('clean_box')){
+
+                                let regex=new RegExp('\u00A0', 'g');
+                                let nbsp=box.innerText.match(regex);
+                                let pa_count=box.getElementsByTagName("a");
+                                if(nbsp !=null || pa_count.length !=0){
+                                    let ok;
+                                    if(nbsp==null && pa_count.length !=0){
+                                        ok=confirm(" ⏬　 「&nbsp」　0 個\n"+
+                                                   "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
+                                    else if(nbsp !=null && pa_count.length==0){
+                                        ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
+                                                   "　　　 「a要素」　0 個"); }
+                                    else{
+                                        ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
+                                                   "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
+                                    if(ok){
+                                        if(buffer[index]==null){
+                                            buffer[index]=box.firstChild.innerHTML; } // 選択pre枠のデータバックアップ 🔵
+                                        box.classList.add('clean_box');
+                                        to_space(box, index); }}
+                                else{ box.classList.add('clean_box'); }
+
+
+                                let regex_z=new RegExp('\u200B', 'g');
+                                let zwsp=box.innerText.match(regex_z);
+                                if(zwsp !=null && buffer[index]==null){
+                                    let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
+                                                   "　　    これを全て削除しますが、削除した「\\u200B」は元に戻せません");
+                                    if(ok){
+                                        zw_space(); }}
+                                else if(zwsp !=null && buffer[index]!=null){
+                                    let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
+                                                   "　　    これを全て削除します");
+                                    if(ok){
+                                        zw_space(); }}
+                            } // contains('clean_box')
+
+                            else{
+                                let ok=confirm(" ❎　 変換前に戻しますか？");
+                                if(ok){
+                                    if(buffer[index]!=null){
+                                        box.firstChild.innerHTML=buffer[index];
+                                        buffer[index]=null; } // バッファークリア 🔵
+                                    box.classList.remove('clean_box'); }}}
+
+
+                        function zw_space(){
+                            let pre_text=box.firstChild.textContent;
+                            pre_text=pre_text.replace(/\u200B/g,'');
+                            box.firstChild.textContent=pre_text; }
+
+
+                        function to_space(box, index){
+                            a_count=0;
+                            let child_node=box.firstChild.childNodes;
+                            for(let t=0; t<child_node.length; t++){
+                                if(child_node[t].nodeType==3){
+                                    child_node[t].nodeValue=child_node[t].nodeValue.replace(/\u00A0/g , '\u0020'); }
+                                else if(child_node[t].nodeType==1 && child_node[t].tagName=="A"){
+                                    let inner_node=child_node[t].childNodes;
+                                    if(inner_node.length==1 && inner_node[0].nodeType==3){
+                                        box.firstChild.replaceChild(inner_node[0], child_node[t]); } // text を a要素と入替え
+                                    else{
+                                        a_count +=1; }} // 子ノードが1個の textの条件に当てはまらない a要素
+                                else{
+                                    let child_node2=child_node[t].childNodes;
+                                    if(child_node2){
+                                        for(let t2=0; t2<child_node2.length; t2++){
+                                            if(child_node2[t2].nodeType==3){
+                                                child_node2[t2].nodeValue=
+                                                    child_node2[t2].nodeValue.replace(/\u00A0/g , '\u0020'); }
+                                            else{
+                                                let child_node3=child_node2[t2].childNodes;
+                                                if(child_node3){
+                                                    for(let t3=0; t3<child_node3.length; t3++){
+                                                        if(child_node3[t3].nodeType==3){
+                                                            child_node3[t3].nodeValue=
+                                                                child_node3[t3].nodeValue.replace(/\u00A0/g , '\u0020'); }
+                                                    }}}}}}}
+
+
+                            let regex=new RegExp('\u00A0', 'g');
+                            nbsp=box.innerText.match(regex);
+                            if(nbsp !=null){
+                                alert("❌　変換できなかった「&nbsp」の数 ： " + nbsp.length );}
+                            if(a_count !=0){
+                                alert("❌　置換えが出来ない「a要素」 ： " + a_count); }
+
+                        } // to_space()
+                    } //edit_box()
+
+                }}}} // box_act()
+
+
+
+    // ********** Scroll Fix  additional function **************
+
+    function box_close(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                box_mode=0;
+                let open_box=iframe_body.querySelectorAll('.open_box');
+                for(let i=0; i<open_box.length; i++){
+                    open_box[i].classList.remove('open_box'); }}}} // 処理枠の outline を削除
+
+
+
+    // ********** To Space (nbsp)  additional function **************
+
+    function tospace_clear(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                let clear_box=iframe_doc.querySelectorAll('.clean_box');
+                for(let i=0; i<clear_box.length; i++){
+                    clear_box[i].classList.remove('clean_box'); }}}} // 処理枠の outline を削除
+
+
+
+    // ********** Before End *********************************
+
+    function before_end(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        let submitButton=document.querySelectorAll('.js-submitButton');
+        submitButton[0].addEventListener("mousedown", all_clear, false);
+        submitButton[1].addEventListener("mousedown", all_clear, false);
+
+        function all_clear(){
+            if(!editor_iframe){ //「HTML表示」編集画面の場合
+                alert("⛔　PreBox Tools ⭐ の終了処理ができません\n\n"+
+                      "　　 通常表示画面に戻り 編集を終了してください");
+                event.stopImmediatePropagation();
+                event.preventDefault(); }
+
+            if(editor_iframe){ //「通常表示」編集画面の場合
+                if(mode!=0){
+                    mode=0;
+                    box_mode=0;
+                    tospace_clear();
+                    box_close(); }}
+        }} // before_end()
+
+
+} // main()
