@@ -1,0 +1,222 @@
+// ==UserScript==
+// @name        Scrollbox Fixer ⭐
+// @namespace        http://tampermonkey.net/
+// @version        0.3
+// @description        「通常表示」上のスクロールボックスを編集処理し易くする 「Ctrl+F7」
+// @author        Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @exclude        https://blog.ameba.jp/ucs/entry/srventrylist.do*
+// @grant        none
+// ==/UserScript==
+
+
+let mode=0;
+let box_mode=0; // boxの状態
+let box_i; // boxの選択
+
+
+let retry=0;
+let interval=setInterval(wait_target, 100);
+function wait_target(){
+    retry++;
+    if(retry>10){ // リトライ制限 10回 1sec
+        clearInterval(interval); }
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    if(target){
+        clearInterval(interval);
+        main(); }}
+
+
+function main(){
+    let editor_iframe;
+    let iframe_doc;
+    let iframe_body;
+    let wysiwyg; // 通常表示の iframe内 html
+
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver( catch_key );
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // WYSIWYG表示が実行条件
+            when_back();
+            right_select();
+
+            iframe_doc=editor_iframe.contentWindow.document;
+            iframe_doc.addEventListener('keydown', check_key); // iframe内
+            document.addEventListener('keydown', check_key); // iframe外
+
+            function check_key(event){
+                if(event.ctrlKey && event.keyCode==118){ // ショートカット「Crtl+F7」
+                    event.stopImmediatePropagation();
+                    if(mode==0){
+                        mode=1;
+                        sign();
+                        box_change(); }
+                    else if(mode==1){
+                        mode=0;
+                        sign_clear();
+                        box_close(); }}}}
+
+        before_end();
+    } // catch_key()
+
+
+    function when_back(){
+        iframe_doc=editor_iframe.contentWindow.document;
+        if(iframe_doc){
+            iframe_body=iframe_doc.querySelector('body');
+            if(iframe_body){
+                let target_box=iframe_body.querySelectorAll('.open_box');
+                if(target_box.length>0){
+                    mode=1;
+                    box_mode=1;
+                    sign();
+                    box_change(); }
+                else{
+                    mode=0;
+                    box_mode=0; }}}}
+
+
+    function box_change(){
+        let target_if= iframe_doc.querySelector('body'); // 監視 target_if
+        let monitor_if=new MutationObserver(change);
+        monitor_if.observe(target_if, {childList: true, attributes: true});
+
+        function change(){
+            iframe_body=iframe_doc.querySelector('body');
+            let target_box=iframe_body.querySelectorAll('div');
+            for(let i=0; i<target_box.length; i++){
+                target_box[i].onclick=function(event){
+                    if(event.ctrlKey){
+                        event.preventDefault();
+                        change_action(target_box[i], i); }}}
+
+            function change_action(box, index){
+                if(box_mode==0 && mode==1){
+                    box_mode=1; // boxのScroll設定を外す
+                    let style_set=window.getComputedStyle(box, null);
+                    if(style_set.getPropertyValue('overflow')){
+                        if(style_set.getPropertyValue('overflow')=='scroll' ||
+                           style_set.getPropertyValue('overflow')=='auto' ||
+                           style_set.getPropertyValue('overflow')=='overlay'){
+                            box_i=index;
+                            box.classList.add('open_box'); }}
+                    else if(style_set.getPropertyValue('overflow-y')){
+                        if(style_set.getPropertyValue('overflow-y')=='scroll' ||
+                           style_set.getPropertyValue('overflow-y')=='auto' ||
+                           style_set.getPropertyValue('overflow-y')=='overlay'){
+                            box_i=index;
+                            box.classList.add('open_box'); }}}
+                else{
+                    if(index==box_i){
+                        box_mode=0; // boxのScroll設定を元に戻す
+                        box.classList.remove('open_box'); }}
+            }}} // box_change()
+
+
+    function box_close(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                iframe_body=iframe_doc.querySelector('body');
+                if(iframe_body){
+                    box_mode=0;
+                    let target_box=iframe_body.querySelectorAll('.open_box');
+                    for(let i=0; i<target_box.length; i++){
+                        target_box[i].classList.remove('open_box'); }}}}}
+
+
+    function sign(){
+        monitor.disconnect(); // 起動時セットアップを MutationObserverに反応させない
+
+        let css=
+            '#cke_1_contents { display: flex; flex-direction: column; } '+
+            '#disp_sf { display: none; margin: 0 0 5px; padding: 4px 0 2px; '+
+            'font-size: 16px; color: #fff; background: green; }';
+        let disp=document.createElement("div");
+        disp.setAttribute("id", "disp_sf");
+        disp.innerHTML="　　　▢ Scrollbox Fixer";
+
+        let style=document.createElement('style'); // disp_sf のデザインを指定
+        style.setAttribute("id", "sf_style");
+        style.innerHTML=css;
+        if(!target.querySelector('#sf_style')){
+            target.appendChild(style); }
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            if(!target.querySelector('#disp_sf')){
+                target.insertBefore(disp, editor_iframe); }}
+        target.querySelector('#disp_sf').style.display='block';
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            let box_style= iframe_doc.createElement('style'); // box のデザインを指定
+            let css_box=
+                '.open_box { outline: 2px solid green !important; height: auto !important; }';
+            box_style.setAttribute("id", "box_style");
+            box_style.innerHTML=css_box;
+            let iframe_html=iframe_doc.getElementsByTagName('html')[0];
+            if(!iframe_html.querySelector('#box_style')){
+                iframe_html.appendChild(box_style); }}
+
+        monitor.observe(target, {childList: true}); }
+
+
+    function sign_clear(){
+        if(target.querySelector('#disp_sf')){
+            target.querySelector('#disp_sf').style.display='none'; }} // 起動表示を非表示
+
+
+    function before_end(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        let submitButton=document.querySelectorAll('.js-submitButton');
+        submitButton[0].addEventListener("click", all_clear, false);
+        submitButton[1].addEventListener("click", all_clear, false);
+
+        function all_clear(){
+            if(!editor_iframe){ //「HTML表示」編集画面の場合
+                alert("⛔　Scroollbox Fixer が処理を終了していません\n\n"+
+                      "　　 通常表示画面に戻り 編集を終了してください");
+                event.stopImmediatePropagation();
+                event.preventDefault(); }
+
+            if(editor_iframe){ //「通常表示」編集画面の場合
+                if(box_mode!=0){
+                    mode=0;
+                    box_mode=0;
+                    box_close(); }}
+        }} // before_end()
+
+
+
+    function right_select(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // WYSIWYG表示が実行条件
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                let iframe_body=iframe_doc.querySelector('body');
+                if(iframe_body){
+                    let target_pre=iframe_body.querySelectorAll('pre');
+                    for(let i=0; i<target_pre.length; i++){
+                        target_pre[i].oncontextmenu=function(event){
+                            if(event.ctrlKey){
+                                event.preventDefault();
+                                select_code(target_pre[i]); }}}
+
+                    function select_code(box){
+                        let selection=iframe_doc.getSelection();
+                        let range=iframe_doc.createRange();
+                        range.selectNodeContents(box);
+                        selection.removeAllRanges();
+                        selection.addRange(range); }
+                }}}} // right_select()
+
+} // main()
