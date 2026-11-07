@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        PreBox Tools ⭐
 // @namespace        http://tampermonkey.net/
-// @version        1.7
+// @version        1.8
 // @description        「pre枠」関連総合編集ツール　「Ctrl+F7」
 // @author        Ameba Blog User
 // @match        https://blog.ameba.jp/ucs/entry/srventryinsertinput.do*
@@ -11,6 +11,9 @@
 // @updateURL        https://github.com/personwritep/PreBox_Tools/raw/main/PreBox_Tools.user.js
 // @downloadURL        https://github.com/personwritep/PreBox_Tools/raw/main/PreBox_Tools.user.js
 // ==/UserScript==
+
+
+let listen=Symbol();
 
 
 let retry=0;
@@ -45,32 +48,37 @@ function main(){
     catch_key();
 
     function catch_key(){
+
+        if(!document[listen]){
+            document.addEventListener('keydown', check_key);
+            document[listen]=true; }
+
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
         if(editor_iframe){
             iframe_doc=editor_iframe.contentWindow.document;
+            if(!iframe_doc[listen]){
+                iframe_doc.addEventListener('keydown', check_key);
+                iframe_doc[listen]=true; }
 
             when_back();
-            right_select();
-
-            document.addEventListener('keydown', check_key); // iframe外
-            iframe_doc.addEventListener('keydown', check_key); // iframe内
+            right_select(); } // if(editor_iframe)
 
 
-            function check_key(event){
-                if(event.ctrlKey && event.keyCode==118){ // ショートカット「Crtl+F7」
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    if(mode==0){
-                        mode=1;
-                        sign();
-                        right_select();
-                        box_act(); }
-                    else if(mode==1){
-                        mode=0;
-                        buffer=[]; // ツールOFF時にバッファークリア 🔵
-                        sign_clear();
-                        tospace_clear();
-                        box_close(); }}}}
+        function check_key(event){
+            if(event.ctrlKey && event.keyCode==118){ // ショートカット「Crtl+F7」
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if(mode==0){
+                    mode=1;
+                    sign();
+                    right_select();
+                    box_act(); }
+                else if(mode==1){
+                    mode=0;
+                    buffer=[]; // ツールOFF時にバッファークリア 🔵
+                    sign_clear();
+                    tospace_clear();
+                    box_close(); }}} // check_key()
 
         before_end(); } // catch_key()
 
@@ -361,8 +369,12 @@ function main(){
     function before_end(){
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
         let submitButton=document.querySelectorAll('.js-submitButton');
-        submitButton[0].addEventListener("mousedown", all_clear, false);
-        submitButton[1].addEventListener("mousedown", all_clear, false);
+        if(!submitButton[0][listen]){
+            submitButton[0].addEventListener("mousedown", all_clear, false);
+            submitButton[0][listen]=true; }
+        if(!submitButton[1][listen]){
+            submitButton[1].addEventListener("mousedown", all_clear, false);
+            submitButton[1][listen]=true; }
 
         function all_clear(){
             if(!editor_iframe){ //「HTML表示」編集画面の場合
