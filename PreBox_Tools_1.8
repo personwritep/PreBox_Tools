@@ -13,7 +13,7 @@
 // ==/UserScript==
 
 
-let listen=Symbol();
+let listen=Symbol()
 
 
 let retry=0;
@@ -31,14 +31,13 @@ function wait_target(){
 function main(){
     let mode=0;
     let box_mode=0; // boxの状態
-    let box_i; // boxの選択
 
     let editor_iframe;
     let iframe_doc;
     let iframe_body;
     let wysiwyg; // 通常表示の iframe内 html
 
-    let buffer=[]; // box内データのバックアップ用配列
+    let codeStorage=new Map(); // pre内容のバックアップ
 
 
     let target=document.getElementById('cke_1_contents'); // 監視 target
@@ -70,13 +69,12 @@ function main(){
                 event.stopImmediatePropagation();
                 if(mode==0){
                     mode=1;
-                    sign();
+                    menu();
                     right_select();
                     box_act(); }
                 else if(mode==1){
                     mode=0;
-                    buffer=[]; // ツールOFF時にバッファークリア 🔵
-                    sign_clear();
+                    menu_clear();
                     tospace_clear();
                     box_close(); }}} // check_key()
 
@@ -89,14 +87,12 @@ function main(){
             iframe_doc=editor_iframe.contentWindow.document;
             if(iframe_doc){
                 if(mode==1){
-                    sign();
+                    menu();
                     box_act(); }}}}
 
 
 
-    // ********** Menu Display and additional function **************
-
-    function sign(){
+    function menu(){
         monitor.disconnect(); // 起動時セットアップを MutationObserverに反応させない
 
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
@@ -124,15 +120,21 @@ function main(){
 
         let disp_sf=
             '<div id="disp_sf">'+
-            SVG_h+'　　 '+
-            '■ To Space (nbsp): Ctrl+L-Click　■ Code Copy: Ctrl＋R-Click　■ Scroll Fix: Alt＋Click'+
+            '<div>'+ SVG_h +
+            '<span class="top_disp0">■ To Space (nbsp)： Ctrl+L-Click</span>　　'+
+            '<span class="top_disp1">■ Code Copy： Ctrl＋R-Click</span></div>'+
+            '<div>'+
+            '<span class="top_disp0">■ Adjust the Indent： Ctrl+Alt+L-Click</span>　　'+
+            '<span class="top_disp1">■ Scroll Fix： Alt＋Click</span></div>'+
             '</div>'+
             '<style>'+
             '#cke_1_contents { display: flex; flex-direction: column; } '+
-            '#disp_sf { position: relative; margin: 0 0 5px; padding: 4px 0 1px; '+
-            'font: 16px/24px Meiryo; color: #fff; background: #009688; white-space: nowrap; } '+
+            '#disp_sf { position: relative; margin: 0 0 5px; padding: 4px 0 1px; width: 740px; '+
+            'font: 16px/24px Meiryo; color: #fff; background: #009688; } '+
             '#help_pbt { position: absolute; top: 7px; left: 6px; height: 16px; width: 16px; '+
-            'cursor: pointer; }'+
+            'cursor: pointer; } '+
+            '.top_disp0 { display: inline-block; width: 340px; margin-left: 60px; } '+
+            '.top_disp1 { display: inline-block; width: 240px; } '+
             '</style>';
 
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
@@ -149,17 +151,15 @@ function main(){
         help.onclick=function(){
             window.open("https://ameblo.jp/personwritep/entry-12760312656.html", '_blank'); }
 
-    } // sign()
+    } // menu()
 
 
 
-    function sign_clear(){
+    function menu_clear(){
         if(target.querySelector('#disp_sf')){
             target.querySelector('#disp_sf').style.display='none'; }} // 起動表示を非表示
 
 
-
-    // *********** Pre Box Right Select ********************
 
     function right_select(){
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
@@ -186,8 +186,6 @@ function main(){
 
 
 
-    // ********** Scroll Fix & To Space (nbsp) **************
-
     function box_act(){
         let pre_box; // PRE枠のコンテナブロック
 
@@ -197,95 +195,100 @@ function main(){
             if(iframe_doc){
                 iframe_body=iframe_doc.querySelector('body');
                 if(iframe_body){
-                    pre_box=iframe_body.querySelectorAll('div');
 
-                    for(let i=0; i<pre_box.length; i++){
-                        pre_box[i].onclick=function(event){
+                    if(!iframe_body[listen]){
+                        iframe_body.addEventListener('click', check_pre);
+                        iframe_body[listen]=true; }
+
+                    function check_pre(event){
+                        if(event.target.tagName=="PRE"){
+                            let box=event.target.closest('div');
+                            act_select(event, box); }}
+
+
+                    function act_select(event, box){
+                        if(event.ctrlKey){
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            if(!event.altKey){
+                                if(mode==1){
+                                    edit_box(box); }}
+                            else{
+                                if(mode==1){
+                                    let preElement=box.querySelector('pre')
+                                    formatCode(preElement); }}}
+                        else {
                             if(event.altKey){
                                 event.preventDefault();
                                 event.stopImmediatePropagation();
-                                scroll_fix(pre_box[i], i); }
-                            if(event.ctrlKey){
-                                event.preventDefault();
-                                event.stopImmediatePropagation();
-                                edit_box(pre_box[i], i); }}}
+                                if(mode==1){
+                                    scroll_fix(box); }}}
+
+                    } // act_select()
 
 
 
-                    function scroll_fix(box, index){
+                    function scroll_fix(box){
                         if(box_mode==0 && mode==1){
                             box_mode=1; // boxのScroll設定を外す
-                            let style_set=window.getComputedStyle(box, null);
-                            if(style_set.getPropertyValue('overflow')){
-                                if(style_set.getPropertyValue('overflow')=='scroll' ||
-                                   style_set.getPropertyValue('overflow')=='auto' ||
-                                   style_set.getPropertyValue('overflow')=='overlay'){
-                                    box_i=index;
-                                    box.classList.add('open_box'); }}
-                            else if(style_set.getPropertyValue('overflow-y')){
-                                if(style_set.getPropertyValue('overflow-y')=='scroll' ||
-                                   style_set.getPropertyValue('overflow-y')=='auto' ||
-                                   style_set.getPropertyValue('overflow-y')=='overlay'){
-                                    box_i=index;
-                                    box.classList.add('open_box'); }}}
+                            box.classList.add('open_box'); }
                         else{
-                            if(index==box_i){
-                                box_mode=0; // boxのScroll設定を元に戻す
-                                box.classList.remove('open_box'); }}
+                            box_mode=0; // boxのScroll設定を元に戻す
+                            box.classList.remove('open_box'); }
+
                     } // scroll_fix()
 
 
 
-                    function edit_box(box, index){
+                    function edit_box(box){
                         let nbsp;
                         let a_count;
+                        let pre_elm=box.firstElementChild; // PRE要素
 
-                        if(box.firstChild.tagName=='PRE' && mode==1){
-                            if(!box.classList.contains('clean_box')){
+                        if(!box.classList.contains('clean_box')){
 
-                                let regex=new RegExp('\u00A0', 'g');
-                                let nbsp=box.innerText.match(regex);
-                                let pa_count=box.getElementsByTagName("a");
-                                if(nbsp !=null || pa_count.length !=0){
-                                    let ok;
-                                    if(nbsp==null && pa_count.length !=0){
-                                        ok=confirm(" ⏬　 「&nbsp」　0 個\n"+
-                                                   "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
-                                    else if(nbsp !=null && pa_count.length==0){
-                                        ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
-                                                   "　　　 「a要素」　0 個"); }
-                                    else{
-                                        ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
-                                                   "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
-                                    if(ok){
-                                        if(buffer[index]==null){
-                                            buffer[index]=box.firstChild.innerHTML; } // 選択pre枠のデータバックアップ 🔵
-                                        box.classList.add('clean_box');
-                                        to_space(box, index); }}
-                                else{ box.classList.add('clean_box'); }
-
-
-                                let regex_z=new RegExp('\u200B', 'g');
-                                let zwsp=box.innerText.match(regex_z);
-                                if(zwsp !=null && buffer[index]==null){
-                                    let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
-                                                   "　　    これを全て削除しますが、削除した「\\u200B」は元に戻せません");
-                                    if(ok){
-                                        zw_space(); }}
-                                else if(zwsp !=null && buffer[index]!=null){
-                                    let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
-                                                   "　　    これを全て削除します");
-                                    if(ok){
-                                        zw_space(); }}
-                            } // contains('clean_box')
-
-                            else{
-                                let ok=confirm(" ❎　 変換前に戻しますか？");
+                            let regex=new RegExp('\u00A0', 'g');
+                            let nbsp=box.innerText.match(regex);
+                            let pa_count=box.getElementsByTagName("a");
+                            if(nbsp !=null || pa_count.length !=0){
+                                let ok;
+                                if(nbsp==null && pa_count.length !=0){
+                                    ok=confirm(" ⏬　 「&nbsp」　0 個\n"+
+                                               "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
+                                else if(nbsp !=null && pa_count.length==0){
+                                    ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
+                                               "　　　 「a要素」　0 個"); }
+                                else{
+                                    ok=confirm(" ⏬　 「&nbsp」　" + nbsp.length + " 個を半角空白に変換します\n"+
+                                               "　　　 「a要素」　" + pa_count.length + " 個をテキストに置換えます"); }
                                 if(ok){
-                                    if(buffer[index]!=null){
-                                        box.firstChild.innerHTML=buffer[index];
-                                        buffer[index]=null; } // バッファークリア 🔵
-                                    box.classList.remove('clean_box'); }}}
+                                    if(!codeStorage.has(pre_elm)){
+                                        codeStorage.set(pre_elm, pre_elm.innerHTML); } // 選択pre枠のデータバックアップ 🔵
+                                    box.classList.add('clean_box');
+                                    to_space(box); }}
+                            else{ box.classList.add('clean_box'); }
+
+
+                            let regex_z=new RegExp('\u200B', 'g');
+                            let zwsp=box.innerText.match(regex_z);
+                            if(zwsp !=null && !codeStorage.has(pre_elm)){
+                                let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
+                                               "　　    これを全て削除しますが、削除した「\\u200B」は元に戻せません");
+                                if(ok){
+                                    zw_space(); }}
+                            else if(zwsp !=null && codeStorage.has(pre_elm)){
+                                let ok=confirm(" 🛑　 「\\u200B」（ゼロ幅スペース）" + zwsp.length + "個 が混入しています\n"+
+                                               "　　    これを全て削除します");
+                                if(ok){
+                                    zw_space(); }}
+                        } // contains('clean_box')
+
+                        else{
+                            let ok=confirm(" ❎　 変換前に戻しますか？");
+                            if(ok){
+                                if(codeStorage.has(pre_elm)){
+                                    pre_elm.innerHTML=codeStorage.get(pre_elm); }
+                                box.classList.remove('clean_box'); }}
 
 
                         function zw_space(){
@@ -294,7 +297,7 @@ function main(){
                             box.firstChild.textContent=pre_text; }
 
 
-                        function to_space(box, index){
+                        function to_space(box){
                             a_count=0;
                             let child_node=box.firstChild.childNodes;
                             for(let t=0; t<child_node.length; t++){
@@ -331,13 +334,46 @@ function main(){
                                 alert("❌　置換えが出来ない「a要素」 ： " + a_count); }
 
                         } // to_space()
+
                     } //edit_box()
 
-                }}}} // box_act()
+                }}}
+
+    } // box_act()
 
 
 
-    // ********** Scroll Fix  additional function **************
+    function formatCode(preElement){
+        // <br> タグを一時的に改行コード（\n）に置き換える
+        //    (innerHTML を使って <br> を \n に置換し、一時的な要素でテキスト化)
+        let tempDiv=document.createElement('div');
+        tempDiv.innerHTML=preElement.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+        let code=tempDiv.textContent;
+
+        let lines=code.split('\n'); // 行ごとに分割
+
+        let minIndent=Infinity;
+        lines.forEach(line=>{ // 空白以外の文字がある行のみ、最小の「行頭の空白の数」を調べる
+            if(line.trim().length===0) return; // 空行は無視
+            let match=line.match(/^([ \t]*)/);
+            if(match){
+                let indentLength=match[1].length; // match[1]（マッチした文字列）の長さを取得
+                if(indentLength<minIndent){
+                    minIndent=indentLength; }}});
+
+
+        if(minIndent!==Infinity && minIndent>0){ // 全行から「最小の空白数」だけ行頭から削除する
+            let cleanedLines=lines.map(line=>{
+                if(line.trim().length===0) return '';
+                return line.slice(minIndent); });
+
+            preElement.textContent=cleanedLines.join('\n').trim(); }
+        else{
+            preElement.textContent=lines.join('\n').trim(); } // 削る必要がない場合も<br>を改行に変換
+
+    } // formatCode()
+
+
 
     function box_close(){
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
@@ -351,8 +387,6 @@ function main(){
 
 
 
-    // ********** To Space (nbsp)  additional function **************
-
     function tospace_clear(){
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
         if(editor_iframe){
@@ -364,7 +398,7 @@ function main(){
 
 
 
-    // ********** Before End *********************************
+    // ********** Before End *********************
 
     function before_end(){
         editor_iframe=document.querySelector('.cke_wysiwyg_frame');
