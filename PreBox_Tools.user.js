@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        PreBox Tools ⭐
 // @namespace        http://tampermonkey.net/
-// @version        1.8
+// @version        1.9
 // @description        「pre枠」関連総合編集ツール　「Ctrl+F7」
 // @author        Ameba Blog User
 // @match        https://blog.ameba.jp/ucs/entry/srventryinsertinput.do*
@@ -14,6 +14,7 @@
 
 
 let listen=Symbol()
+let listenR=Symbol()
 
 
 let retry=0;
@@ -168,15 +169,20 @@ function main(){
             if(iframe_doc){
                 let iframe_body=iframe_doc.querySelector('body');
                 if(iframe_body){
-                    let target_pre=iframe_body.querySelectorAll('pre');
-                    for(let i=0; i<target_pre.length; i++){
-                        target_pre[i].oncontextmenu=function(event){
-                            if(event.ctrlKey){
+
+                    if(!iframe_body[listenR]){
+                        iframe_body.addEventListener('contextmenu', check_preR);
+                        iframe_body[listenR]=true; }
+
+                    function check_preR(event){
+                        if(event.ctrlKey){
+                            let box=event.target.closest('div');
+                            if(box && box.querySelector('pre')){
                                 event.preventDefault();
                                 event.stopImmediatePropagation();
-                                select_code(target_pre[i]); }}}
+                                select_codeR(box); }}}
 
-                    function select_code(box){
+                    function select_codeR(box){
                         let selection=iframe_doc.getSelection();
                         let range=iframe_doc.createRange();
                         range.selectNodeContents(box);
@@ -201,8 +207,8 @@ function main(){
                         iframe_body[listen]=true; }
 
                     function check_pre(event){
-                        if(event.target.tagName=="PRE"){
-                            let box=event.target.closest('div');
+                        let box=event.target.closest('div');
+                        if(box && box.querySelector('pre')){
                             act_select(event, box); }}
 
 
